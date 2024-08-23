@@ -13,6 +13,33 @@ type EvaluableStmt interface {
 	Evaluate(env *Environment) error
 }
 
+func (bs BreakStmt) Evaluate(env *Environment) error {
+	return errors.NewBreakException(bs.token)
+}
+
+func (cs ContinueStmt) Evaluate(env *Environment) error {
+	return errors.NewContinueException(cs.token)
+}
+
+func (is IfStmt) Evaluate(env *Environment) error {
+	cond, err := is.condition.(Evaluable).Evaluate(env)
+	if err != nil {
+		return err
+	}
+	if isTruthy(cond) {
+		err := is.thenBranch.(EvaluableStmt).Evaluate(env)
+		if err != nil {
+			return err
+		}
+	} else if is.elseBranch != nil {
+		err := is.elseBranch.(EvaluableStmt).Evaluate(env)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (ps PrintStmt) Evaluate(env *Environment) error {
 	result, err := ps.expression.(Evaluable).Evaluate(env)
 	if err != nil {
@@ -20,6 +47,37 @@ func (ps PrintStmt) Evaluate(env *Environment) error {
 	}
 
 	fmt.Println(ToString(result))
+	return nil
+}
+
+func (ws WhileStmt) Evaluate(env *Environment) error {
+	cond, condErr := ws.condition.(Evaluable).Evaluate(env)
+	for condErr == nil && isTruthy(cond) {
+		bodyErr := ws.body.(EvaluableStmt).Evaluate(env)
+
+		shouldBreak := false
+		if bodyErr != nil {
+			switch bodyErr.(type) {
+			case *errors.ContinueException:
+				continue
+			case *errors.BreakException:
+				shouldBreak = true
+			default:
+				return bodyErr
+			}
+
+		}
+
+		if shouldBreak {
+			break
+		}
+
+		cond, condErr = ws.condition.(Evaluable).Evaluate(env)
+	}
+	if condErr != nil {
+		return condErr
+	}
+
 	return nil
 }
 
@@ -73,6 +131,29 @@ func (g GroupingExpr) Evaluate(env *Environment) (LoxValue, error) {
 func (v VariableExpr) Evaluate(env *Environment) (LoxValue, error) {
 	value, err := env.Get(v.name)
 	return value, err
+}
+
+func (l LogicalExpr) Evaluate(env *Environment) (LoxValue, error) {
+	left, err := l.left.(Evaluable).Evaluate(env)
+	if err != nil {
+		return nil, err
+	}
+
+	if l.operator.TokenType == token.OR {
+		if isTruthy(left) {
+			return left, nil
+		}
+	} else {
+		if !isTruthy(left) {
+			return left, nil
+		}
+	}
+
+	right, err := l.right.(Evaluable).Evaluate(env)
+	if err != nil {
+		return nil, err
+	}
+	return right, nil
 }
 
 func (u UnaryExpr) Evaluate(env *Environment) (LoxValue, error) {
@@ -186,20 +267,20 @@ func (t TernaryExpr) Evaluate(env *Environment) (LoxValue, error) {
 		return cond, condErr
 	}
 
-	left, leftErr := t.left.(Evaluable).Evaluate(env)
-	if leftErr != nil {
-		return left, leftErr
-	}
-
-	right, rightErr := t.right.(Evaluable).Evaluate(env)
-
-	if rightErr != nil {
-		return right, rightErr
-	}
-
 	if isTruthy(cond) {
+		left, leftErr := t.left.(Evaluable).Evaluate(env)
+		if leftErr != nil {
+			return left, leftErr
+		}
+
 		return left, nil
 	} else {
+		right, rightErr := t.right.(Evaluable).Evaluate(env)
+
+		if rightErr != nil {
+			return right, rightErr
+		}
+
 		return right, nil
 	}
 }

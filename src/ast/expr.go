@@ -13,6 +13,12 @@ type LiteralExpr struct {
 	value LoxValue
 }
 
+type LogicalExpr struct {
+	left     Expr
+	operator token.Token
+	right    Expr
+}
+
 type UnaryExpr struct {
 	operator token.Token
 	right    Expr
