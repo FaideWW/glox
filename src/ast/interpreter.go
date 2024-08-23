@@ -21,3 +21,8 @@ func (i *Interpreter) Interpret(statements []Stmt) error {
 
 	return nil
 }
+
+func (i *Interpreter) InterpretExpression(expression Expr) (LoxValue, error) {
+	return expression.(Evaluable).Evaluate(i.environment)
+
+}

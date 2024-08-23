@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/faideww/glox/src/errors"
 	"github.com/faideww/glox/src/token"
 )
 
@@ -18,7 +19,7 @@ func (ps PrintStmt) Evaluate(env *Environment) error {
 		return err
 	}
 
-	fmt.Println(toString(result))
+	fmt.Println(ToString(result))
 	return nil
 }
 
@@ -30,15 +31,17 @@ func (es ExpressionStmt) Evaluate(env *Environment) error {
 func (vs VarStmt) Evaluate(env *Environment) error {
 	var value LoxValue
 	var err error
-	if vs.initializer != nil {
+
+	if vs.initializer == nil {
+		env.Declare(vs.name.Lexeme)
+	} else {
 		value, err = vs.initializer.(Evaluable).Evaluate(env)
+		if err != nil {
+			return err
+		}
+		env.Initialize(vs.name.Lexeme, value)
 	}
 
-	if err != nil {
-		return err
-	}
-
-	env.Define(vs.name.Lexeme, value)
 	return nil
 }
 
@@ -59,20 +62,20 @@ type Evaluable interface {
 	Evaluate(env *Environment) (LoxValue, error)
 }
 
-func (l Literal) Evaluate(env *Environment) (LoxValue, error) {
+func (l LiteralExpr) Evaluate(env *Environment) (LoxValue, error) {
 	return l.value, nil
 }
 
-func (g Grouping) Evaluate(env *Environment) (LoxValue, error) {
+func (g GroupingExpr) Evaluate(env *Environment) (LoxValue, error) {
 	return g.expression.(Evaluable).Evaluate(env)
 }
 
-func (v Variable) Evaluate(env *Environment) (LoxValue, error) {
+func (v VariableExpr) Evaluate(env *Environment) (LoxValue, error) {
 	value, err := env.Get(v.name)
 	return value, err
 }
 
-func (u Unary) Evaluate(env *Environment) (LoxValue, error) {
+func (u UnaryExpr) Evaluate(env *Environment) (LoxValue, error) {
 	right, err := u.right.(Evaluable).Evaluate(env)
 	if err != nil {
 		return right, err
@@ -86,14 +89,14 @@ func (u Unary) Evaluate(env *Environment) (LoxValue, error) {
 			return -(rFloat), nil
 		}
 
-		return nil, NewRuntimeError(u.operator, "Operand must be a number")
+		return nil, errors.NewRuntimeError(u.operator, "Operand must be a number")
 	}
 
 	// Unreachable
 	return nil, nil
 }
 
-func (a Assignment) Evaluate(env *Environment) (LoxValue, error) {
+func (a AssignmentExpr) Evaluate(env *Environment) (LoxValue, error) {
 	value, err := a.value.(Evaluable).Evaluate(env)
 	if err != nil {
 		return nil, err
@@ -106,7 +109,7 @@ func (a Assignment) Evaluate(env *Environment) (LoxValue, error) {
 	return value, nil
 }
 
-func (b Binary) Evaluate(env *Environment) (LoxValue, error) {
+func (b BinaryExpr) Evaluate(env *Environment) (LoxValue, error) {
 	left, leftErr := b.left.(Evaluable).Evaluate(env)
 	right, rightErr := b.right.(Evaluable).Evaluate(env)
 
@@ -151,7 +154,7 @@ func (b Binary) Evaluate(env *Environment) (LoxValue, error) {
 			if result, ok := safeDivide(lFloat, rFloat); ok {
 				return result, nil
 			}
-			return nil, NewRuntimeError(b.operator, "Divide by zero")
+			return nil, errors.NewRuntimeError(b.operator, "Divide by zero")
 		}
 	case token.STAR:
 		if lOk && rOk {
@@ -166,17 +169,17 @@ func (b Binary) Evaluate(env *Environment) (LoxValue, error) {
 		_, rOk = right.(string)
 
 		if lOk || rOk {
-			return fmt.Sprintf("%s%s", toString(left), toString(right)), nil
+			return fmt.Sprintf("%s%s", ToString(left), ToString(right)), nil
 		}
 
-		return nil, NewRuntimeError(b.operator, "Operands must be two numbers or two strings")
+		return nil, errors.NewRuntimeError(b.operator, "Operands must be two numbers or two strings")
 	}
 
 	// Unreachable
-	return nil, NewRuntimeError(b.operator, "Operands must be numbers")
+	return nil, errors.NewRuntimeError(b.operator, "Operands must be numbers")
 }
 
-func (t Ternary) Evaluate(env *Environment) (LoxValue, error) {
+func (t TernaryExpr) Evaluate(env *Environment) (LoxValue, error) {
 	cond, condErr := t.condition.(Evaluable).Evaluate(env)
 
 	if condErr != nil {
@@ -220,7 +223,7 @@ func safeDivide(a, b float64) (float64, bool) {
 	return a / b, true
 }
 
-func toString(value LoxValue) string {
+func ToString(value LoxValue) string {
 	if value == nil {
 		return "nil"
 	}

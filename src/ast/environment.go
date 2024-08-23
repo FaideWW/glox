@@ -3,48 +3,63 @@ package ast
 import (
 	"fmt"
 
+	"github.com/faideww/glox/src/errors"
 	"github.com/faideww/glox/src/token"
 )
 
+type LoxVariable struct {
+	initialized bool
+	value       LoxValue
+}
+
 type Environment struct {
-	parent *Environment
-	values map[string]LoxValue
+	parent    *Environment
+	variables map[string]LoxVariable
 }
 
 func NewGlobalEnvironment() Environment {
 	return Environment{
-		parent: nil,
-		values: make(map[string]LoxValue),
+		parent:    nil,
+		variables: make(map[string]LoxVariable),
 	}
 }
 
 func NewEnvironment(parent *Environment) Environment {
 	return Environment{
-		parent: parent,
-		values: make(map[string]LoxValue),
+		parent:    parent,
+		variables: make(map[string]LoxVariable),
 	}
 }
 
-func (e *Environment) Define(name string, value LoxValue) {
-	e.values[name] = value
+func (e *Environment) Declare(name string) {
+	e.variables[name] = LoxVariable{initialized: false, value: nil}
+}
+
+func (e *Environment) Initialize(name string, value LoxValue) {
+	e.variables[name] = LoxVariable{initialized: true, value: value}
 }
 
 func (e *Environment) Get(name token.Token) (LoxValue, error) {
-	value, ok := e.values[name.Lexeme]
+	value, ok := e.variables[name.Lexeme]
 	if ok {
-		return value, nil
+		if !value.initialized {
+			return nil, errors.NewRuntimeError(name, fmt.Sprintf("Variable '%s' is uninitialized", name.Lexeme))
+		}
+		return value.value, nil
 	}
 
 	if e.parent != nil {
 		return e.parent.Get(name)
 	}
 
-	return nil, NewRuntimeError(name, fmt.Sprintf("Undefined variable '%s'", name.Lexeme))
+	return nil, errors.NewRuntimeError(name, fmt.Sprintf("Undefined variable '%s'", name.Lexeme))
 }
 
 func (e *Environment) Assign(name token.Token, nextValue LoxValue) error {
-	if _, ok := e.values[name.Lexeme]; ok {
-		e.values[name.Lexeme] = nextValue
+	if v, ok := e.variables[name.Lexeme]; ok {
+		v.value = nextValue
+		v.initialized = true
+		e.variables[name.Lexeme] = v
 		return nil
 	}
 
@@ -52,5 +67,5 @@ func (e *Environment) Assign(name token.Token, nextValue LoxValue) error {
 		return e.parent.Assign(name, nextValue)
 	}
 
-	return NewRuntimeError(name, fmt.Sprintf("Undefined variable '%s'", name.Lexeme))
+	return errors.NewRuntimeError(name, fmt.Sprintf("Undefined variable '%s'", name.Lexeme))
 }

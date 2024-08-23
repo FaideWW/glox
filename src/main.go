@@ -7,9 +7,9 @@ import (
 	"os"
 
 	"github.com/faideww/glox/src/ast"
+	"github.com/faideww/glox/src/errors"
 )
 
-var hadError bool
 var interpreter ast.Interpreter
 
 func main() {
@@ -34,14 +34,11 @@ func runFile(fp string) error {
 		return err
 	}
 	interpreter = ast.NewInterpreter()
-	err = run(string(bytes))
-	if err != nil {
-		fmt.Printf("Error: %s\n", err)
-	}
-	if _, ok := err.(*ast.ParserError); ok {
+	err = runProgram(string(bytes))
+	if _, ok := err.(*errors.ParserError); ok {
 		os.Exit(65)
 	}
-	if _, ok := err.(*ast.RuntimeError); ok {
+	if _, ok := err.(*errors.RuntimeError); ok {
 		os.Exit(70)
 	}
 	return nil
@@ -55,40 +52,71 @@ func runPrompt() error {
 		var err error
 		fmt.Printf("> ")
 		line, err := buffer.ReadString('\n')
-		fmt.Printf("%+v", line)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return err
 		}
-		err = run(line)
-		if err != nil {
-			fmt.Println(err)
-		}
+
+		runRepl(line)
 	}
 	return nil
 }
 
-func run(source string) error {
+func runRepl(source string) error {
 	scanner := NewScanner(source)
 	tokens, scanErr := scanner.ScanTokens()
 	if scanErr != nil {
 		return scanErr
 	}
 
-	parser := ast.NewParser(tokens)
-	statements, parseErr := parser.Parse()
+	reporter := errors.NewErrorReporter()
 
+	parser := ast.NewParser(tokens, reporter)
+
+	// try to parse a single expression first
+	expr, parseOk := parser.ParseExpression()
+
+	if parseOk {
+		// fmt.Printf("Expr: %+v\n", expr)
+		value, runtimeErr := interpreter.InterpretExpression(expr)
+		if runtimeErr != nil {
+			return runtimeErr
+		}
+
+		fmt.Println(ast.ToString(value))
+		return nil
+	}
+
+	// if that fails, try to parse it as statements instead
+	reporter.Clear()
+	return runProgram(source)
+}
+
+func runProgram(source string) error {
+	scanner := NewScanner(source)
+	tokens, scanErr := scanner.ScanTokens()
+	if scanErr != nil {
+		return scanErr
+	}
+
+	reporter := errors.NewErrorReporter()
+	parser := ast.NewParser(tokens, reporter)
+	statements, parseOk := parser.Parse()
+
+	// fmt.Println("Stmts:")
 	// for _, statement := range statements {
 	// 	fmt.Printf("%+v\n", statement)
 	// }
 
-	if parseErr != nil {
-		return parseErr
+	if !parseOk {
+		reporter.Report(os.Stdout)
+		return reporter.Last()
 	}
 
 	runtimeErr := interpreter.Interpret(statements)
 	if runtimeErr != nil {
+		fmt.Println(runtimeErr)
 		return runtimeErr
 	}
 

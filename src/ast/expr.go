@@ -9,35 +9,35 @@ type LoxValue interface{}
 type Expr interface {
 }
 
-type Literal struct {
+type LiteralExpr struct {
 	value LoxValue
 }
 
-type Unary struct {
+type UnaryExpr struct {
 	operator token.Token
 	right    Expr
 }
 
-type Variable struct {
+type VariableExpr struct {
 	name token.Token
 }
 
-type Assignment struct {
+type AssignmentExpr struct {
 	name  token.Token
 	value Expr
 }
 
-type Binary struct {
+type BinaryExpr struct {
 	left     Expr
 	operator token.Token
 	right    Expr
 }
 
-type Grouping struct {
+type GroupingExpr struct {
 	expression Expr
 }
 
-type Ternary struct {
+type TernaryExpr struct {
 	condition Expr
 	left      Expr
 	right     Expr

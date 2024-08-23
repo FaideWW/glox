@@ -1,28 +1,41 @@
 package ast
 
 import (
+	"github.com/faideww/glox/src/errors"
 	"github.com/faideww/glox/src/token"
 )
 
 type Parser struct {
-	tokens  []token.Token
-	current int
+	tokens   []token.Token
+	current  int
+	errored  bool
+	reporter *errors.ErrorReporter
 }
 
-func NewParser(tokens []token.Token) *Parser {
-	return &Parser{tokens, 0}
+func NewParser(tokens []token.Token, reporter *errors.ErrorReporter) *Parser {
+	return &Parser{tokens, 0, false, reporter}
 }
 
-func (p *Parser) Parse() ([]Stmt, error) {
+func (p *Parser) Parse() ([]Stmt, bool) {
 	statements := make([]Stmt, 0)
 	for !p.atEnd() {
 		stmt, err := p.declaration()
 		if err != nil {
-			return statements, err
+			return statements, !p.errored
 		}
 		statements = append(statements, stmt)
 	}
-	return statements, nil
+
+	return statements, !p.errored
+}
+
+func (p *Parser) ParseExpression() (Expr, bool) {
+	expr, err := p.expression()
+	if err != nil {
+		return nil, !p.errored
+	}
+
+	return expr, !p.errored
 }
 
 func (p *Parser) declaration() (Stmt, error) {
@@ -34,9 +47,8 @@ func (p *Parser) declaration() (Stmt, error) {
 		value, err = p.statement()
 	}
 	if err != nil {
-		// TODO: does this report an error properly?
 		p.synchronize()
-		return nil, nil
+		return nil, err
 	}
 
 	return value, err
@@ -176,8 +188,8 @@ func (p *Parser) assignment() (Expr, error) {
 		}
 
 		// Check if the receiving expression is an l-value
-		if receiver, ok := expr.(Variable); ok {
-			return Assignment{receiver.name, value}, nil
+		if receiver, ok := expr.(VariableExpr); ok {
+			return AssignmentExpr{receiver.name, value}, nil
 		}
 
 		return nil, p.error(tok, "Invalid assignment target")
@@ -204,7 +216,7 @@ func (p *Parser) condition() (Expr, error) {
 				return nil, err
 			}
 
-			expr = Ternary{expr, left, right}
+			expr = TernaryExpr{expr, left, right}
 		} else {
 			return nil, p.error(p.peek(), "expected : in ternary condition")
 		}
@@ -225,7 +237,7 @@ func (p *Parser) equality() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		expr = Binary{expr, operator, right}
+		expr = BinaryExpr{expr, operator, right}
 	}
 
 	return expr, nil
@@ -242,7 +254,7 @@ func (p *Parser) comparison() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		expr = Binary{expr, operator, right}
+		expr = BinaryExpr{expr, operator, right}
 
 	}
 
@@ -260,7 +272,7 @@ func (p *Parser) term() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		expr = Binary{expr, operator, right}
+		expr = BinaryExpr{expr, operator, right}
 
 	}
 
@@ -278,7 +290,7 @@ func (p *Parser) factor() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		expr = Binary{expr, operator, right}
+		expr = BinaryExpr{expr, operator, right}
 
 	}
 
@@ -292,7 +304,7 @@ func (p *Parser) unary() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return Unary{operator, right}, nil
+		return UnaryExpr{operator, right}, nil
 	}
 
 	return p.primary()
@@ -300,21 +312,21 @@ func (p *Parser) unary() (Expr, error) {
 
 func (p *Parser) primary() (Expr, error) {
 	if p.match(token.FALSE) {
-		return Literal{false}, nil
+		return LiteralExpr{false}, nil
 	}
 	if p.match(token.TRUE) {
-		return Literal{true}, nil
+		return LiteralExpr{true}, nil
 	}
 	if p.match(token.NIL) {
-		return Literal{nil}, nil
+		return LiteralExpr{nil}, nil
 	}
 
 	if p.match(token.NUMBER, token.STRING) {
-		return Literal{p.previous().Literal}, nil
+		return LiteralExpr{p.previous().Literal}, nil
 	}
 
 	if p.match(token.IDENTIFIER) {
-		return Variable{p.previous()}, nil
+		return VariableExpr{p.previous()}, nil
 	}
 
 	if p.match(token.LEFT_PAREN) {
@@ -326,7 +338,7 @@ func (p *Parser) primary() (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		return Grouping{expr}, nil
+		return GroupingExpr{expr}, nil
 	}
 
 	return nil, p.error(p.peek(), "expected expression")
@@ -341,7 +353,10 @@ func (p *Parser) consume(expect token.TokenType, err string) (token.Token, error
 }
 
 func (p *Parser) error(t token.Token, message string) error {
-	return NewParserError(t, message)
+	p.errored = true
+	err := errors.NewParserError(t, message)
+	p.reporter.Collect(err)
+	return err
 }
 
 func (p *Parser) synchronize() {
