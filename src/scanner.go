@@ -9,12 +9,13 @@ import (
 )
 
 type Scanner struct {
-	source   string
-	tokens   []token.Token
-	start    int
-	current  int
-	line     int
-	keywords map[string]token.TokenType
+	source         string
+	tokens         []token.Token
+	start          int
+	current        int
+	line           int
+	currentTokenId int
+	keywords       map[string]token.TokenType
 }
 
 type ScannerError struct {
@@ -29,11 +30,12 @@ func (e *ScannerError) Error() string {
 
 func NewScanner(source string) *Scanner {
 	return &Scanner{
-		source:  source,
-		tokens:  make([]token.Token, 0),
-		start:   0,
-		current: 0,
-		line:    1,
+		source:         source,
+		tokens:         make([]token.Token, 0),
+		start:          0,
+		current:        0,
+		line:           1,
+		currentTokenId: 0,
 		keywords: map[string]token.TokenType{
 			"and":      token.AND,
 			"break":    token.BREAK,
@@ -66,7 +68,7 @@ func (s *Scanner) ScanTokens() ([]token.Token, error) {
 	if err != nil {
 		return s.tokens, err
 	}
-	s.tokens = append(s.tokens, token.NewToken(token.EOF, "", nil, s.line))
+	s.tokens = append(s.tokens, token.NewToken(token.EOF, "", nil, s.line, s.currentTokenId))
 	return s.tokens, nil
 }
 
@@ -183,7 +185,8 @@ func (s *Scanner) addToken(t token.TokenType) {
 
 func (s *Scanner) addTokenWithLiteral(t token.TokenType, literal token.LiteralObject) {
 	text := s.source[s.start:s.current]
-	s.tokens = append(s.tokens, token.NewToken(t, text, literal, s.line))
+	s.tokens = append(s.tokens, token.NewToken(t, text, literal, s.line, s.currentTokenId))
+	s.currentTokenId++
 }
 
 func (s *Scanner) match(expected rune) bool {

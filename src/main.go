@@ -10,7 +10,7 @@ import (
 	"github.com/faideww/glox/src/errors"
 )
 
-var interpreter ast.Interpreter
+var interpreter *ast.Interpreter
 
 func main() {
 	var err error
@@ -106,12 +106,20 @@ func runProgram(source string) error {
 
 	// fmt.Println("Stmts:")
 	// for _, statement := range statements {
-	// 	fmt.Printf("%+v\n", statement)
+	// 	fmt.Printf("%#v\n", statement)
 	// }
 
 	if !parseOk {
 		reporter.Report(os.Stdout)
 		return reporter.Last()
+	}
+
+	resolver := ast.NewResolver(interpreter)
+	resolveErr := resolver.Resolve(statements)
+
+	if resolveErr != nil {
+		fmt.Println(resolveErr)
+		return resolveErr
 	}
 
 	runtimeErr := interpreter.Interpret(statements)

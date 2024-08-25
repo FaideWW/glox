@@ -12,6 +12,12 @@ type ExpressionStmt struct {
 	expression Expr
 }
 
+type FunctionStmt struct {
+	name   token.Token
+	params []token.Token
+	body   []Stmt
+}
+
 type IfStmt struct {
 	condition  Expr
 	thenBranch Stmt
@@ -20,6 +26,11 @@ type IfStmt struct {
 
 type PrintStmt struct {
 	expression Expr
+}
+
+type ReturnStmt struct {
+	keyword token.Token
+	value   Expr
 }
 
 type WhileStmt struct {
@@ -32,6 +43,6 @@ type VarStmt struct {
 	initializer Expr
 }
 
-type Block struct {
+type BlockStmt struct {
 	statements []Stmt
 }

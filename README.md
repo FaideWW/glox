@@ -7,33 +7,39 @@ Current lox grammar:
 ```
 program        → declaration* EOF ;
 
-declaration    → varDecl | statement ;
+declaration    → funDecl | varDecl | statement ;
+
+funDecl        → "fun" function ;
+function       → IDENTIFIER "(" parameters? ")" block ;
+parameters     → IDENTIFIER ( "," IDENTIFIER )* ;
+
 
 varDecl        → "var" IDENTIFIER ( "=" expression )? ";" ;
 
 statement      → exprStmt
+               | breakStmt
+               | continueStmt
                | forStmt
                | ifStmt
                | printStmt
                | whileStmt
-               | continueStmt
-               | breakStmt
+               | whileStmt
                | block;
 
+exprStmt       → expression ";" ;
+breakStmt      → "break" ";" ;
+continueStmt   → "continue" ";" ;
 forStmt        → "for" "(" ( varDecl | exprStmt | ";" )
                  expression? ";"
                  expression? ")" statement ;
-
 ifStmt         → "if" "(" expression ")" statement
                ( "else" statement )? ;
-exprStmt       → expression ";" ;
 printStmt      → "print" expression ";" ;
+returnStmt     → "return" expression? ";" ;
 whileStmt      → "while" "(" expression ")" statement ;
-continueStmt   → "continue" ";" ;
-breakStmt      → "break" ";" ;
 block          → "{" declaration* "}" ;
 
-expression     → assignment ( ( "," ) assignment )* ;
+expression     → assignment ;
 assignment     → IDENTIFIER "=" assignment
                | condition ;
 condition      → logic_or ( ( "?" ) condition ( ":" ) condition )? ;
@@ -44,7 +50,9 @@ comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary
-               | primary ;
+               | call ;
+call           → primary ( "(" arguments? ")" )* ;
+arguments      → expression ( "," expression )* ;
 primary        → NUMBER | STRING | "true" | "false" | "nil"
                | "(" expression ")"
                | IDENTIFIER ;

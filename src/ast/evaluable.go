@@ -10,29 +10,35 @@ import (
 )
 
 type EvaluableStmt interface {
-	Evaluate(env *Environment) error
+	Evaluate(i *Interpreter) error
 }
 
-func (bs BreakStmt) Evaluate(env *Environment) error {
-	return errors.NewBreakException(bs.token)
+func (bs BreakStmt) Evaluate(i *Interpreter) error {
+	return NewBreakException(bs.token)
 }
 
-func (cs ContinueStmt) Evaluate(env *Environment) error {
-	return errors.NewContinueException(cs.token)
+func (cs ContinueStmt) Evaluate(i *Interpreter) error {
+	return NewContinueException(cs.token)
 }
 
-func (is IfStmt) Evaluate(env *Environment) error {
-	cond, err := is.condition.(Evaluable).Evaluate(env)
+func (fs FunctionStmt) Evaluate(i *Interpreter) error {
+	function := NewLoxFunction(fs, i.currentEnv)
+	i.currentEnv.Define(fs.name.Lexeme, function)
+	return nil
+}
+
+func (is IfStmt) Evaluate(i *Interpreter) error {
+	cond, err := is.condition.(Evaluable).Evaluate(i)
 	if err != nil {
 		return err
 	}
 	if isTruthy(cond) {
-		err := is.thenBranch.(EvaluableStmt).Evaluate(env)
+		err := is.thenBranch.(EvaluableStmt).Evaluate(i)
 		if err != nil {
 			return err
 		}
 	} else if is.elseBranch != nil {
-		err := is.elseBranch.(EvaluableStmt).Evaluate(env)
+		err := is.elseBranch.(EvaluableStmt).Evaluate(i)
 		if err != nil {
 			return err
 		}
@@ -40,8 +46,8 @@ func (is IfStmt) Evaluate(env *Environment) error {
 	return nil
 }
 
-func (ps PrintStmt) Evaluate(env *Environment) error {
-	result, err := ps.expression.(Evaluable).Evaluate(env)
+func (ps PrintStmt) Evaluate(i *Interpreter) error {
+	result, err := ps.expression.(Evaluable).Evaluate(i)
 	if err != nil {
 		return err
 	}
@@ -50,17 +56,30 @@ func (ps PrintStmt) Evaluate(env *Environment) error {
 	return nil
 }
 
-func (ws WhileStmt) Evaluate(env *Environment) error {
-	cond, condErr := ws.condition.(Evaluable).Evaluate(env)
+func (rs ReturnStmt) Evaluate(i *Interpreter) error {
+	var retVal LoxValue
+	if rs.value != nil {
+		var err error
+		retVal, err = rs.value.(Evaluable).Evaluate(i)
+		if err != nil {
+			return err
+		}
+	}
+
+	return NewReturnException(rs.keyword, retVal)
+}
+
+func (ws WhileStmt) Evaluate(i *Interpreter) error {
+	cond, condErr := ws.condition.(Evaluable).Evaluate(i)
 	for condErr == nil && isTruthy(cond) {
-		bodyErr := ws.body.(EvaluableStmt).Evaluate(env)
+		bodyErr := ws.body.(EvaluableStmt).Evaluate(i)
 
 		shouldBreak := false
 		if bodyErr != nil {
 			switch bodyErr.(type) {
-			case *errors.ContinueException:
+			case *ContinueException:
 				continue
-			case *errors.BreakException:
+			case *BreakException:
 				shouldBreak = true
 			default:
 				return bodyErr
@@ -72,7 +91,7 @@ func (ws WhileStmt) Evaluate(env *Environment) error {
 			break
 		}
 
-		cond, condErr = ws.condition.(Evaluable).Evaluate(env)
+		cond, condErr = ws.condition.(Evaluable).Evaluate(i)
 	}
 	if condErr != nil {
 		return condErr
@@ -81,118 +100,71 @@ func (ws WhileStmt) Evaluate(env *Environment) error {
 	return nil
 }
 
-func (es ExpressionStmt) Evaluate(env *Environment) error {
-	_, err := es.expression.(Evaluable).Evaluate(env)
+func (es ExpressionStmt) Evaluate(i *Interpreter) error {
+	_, err := es.expression.(Evaluable).Evaluate(i)
 	return err
 }
 
-func (vs VarStmt) Evaluate(env *Environment) error {
+func (vs VarStmt) Evaluate(i *Interpreter) error {
 	var value LoxValue
 	var err error
 
 	if vs.initializer == nil {
-		env.Declare(vs.name.Lexeme)
+		i.currentEnv.Define(vs.name.Lexeme, nil)
 	} else {
-		value, err = vs.initializer.(Evaluable).Evaluate(env)
+		value, err = vs.initializer.(Evaluable).Evaluate(i)
 		if err != nil {
 			return err
 		}
-		env.Initialize(vs.name.Lexeme, value)
+		i.currentEnv.Define(vs.name.Lexeme, value)
 	}
 
 	return nil
 }
 
-func (b Block) Evaluate(env *Environment) error {
-	blockEnv := NewEnvironment(env)
+func (b BlockStmt) Evaluate(i *Interpreter) error {
+	prevEnv := i.currentEnv
+	blockEnv := NewEnvironment(i.currentEnv)
+	i.currentEnv = blockEnv
 
+	var err error
 	for _, statement := range b.statements {
-		err := statement.(EvaluableStmt).Evaluate(&blockEnv)
+		err = statement.(EvaluableStmt).Evaluate(i)
 		if err != nil {
-			return err
+			break
 		}
 	}
 
-	return nil
+	i.currentEnv = prevEnv
+
+	return err
 }
 
 type Evaluable interface {
-	Evaluate(env *Environment) (LoxValue, error)
+	Evaluate(i *Interpreter) (LoxValue, error)
 }
 
-func (l LiteralExpr) Evaluate(env *Environment) (LoxValue, error) {
-	return l.value, nil
-}
-
-func (g GroupingExpr) Evaluate(env *Environment) (LoxValue, error) {
-	return g.expression.(Evaluable).Evaluate(env)
-}
-
-func (v VariableExpr) Evaluate(env *Environment) (LoxValue, error) {
-	value, err := env.Get(v.name)
-	return value, err
-}
-
-func (l LogicalExpr) Evaluate(env *Environment) (LoxValue, error) {
-	left, err := l.left.(Evaluable).Evaluate(env)
+func (a AssignmentExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	value, err := a.value.(Evaluable).Evaluate(i)
 	if err != nil {
 		return nil, err
 	}
 
-	if l.operator.TokenType == token.OR {
-		if isTruthy(left) {
-			return left, nil
-		}
+	if hops, ok := i.locals[a]; ok {
+		i.currentEnv.AssignAt(hops, a.name, value)
 	} else {
-		if !isTruthy(left) {
-			return left, nil
-		}
+		err = i.globals.Assign(a.name, value)
 	}
 
-	right, err := l.right.(Evaluable).Evaluate(env)
-	if err != nil {
-		return nil, err
-	}
-	return right, nil
-}
-
-func (u UnaryExpr) Evaluate(env *Environment) (LoxValue, error) {
-	right, err := u.right.(Evaluable).Evaluate(env)
-	if err != nil {
-		return right, err
-	}
-
-	switch u.operator.TokenType {
-	case token.BANG:
-		return !isTruthy(right), nil
-	case token.MINUS:
-		if rFloat, ok := right.(float64); ok {
-			return -(rFloat), nil
-		}
-
-		return nil, errors.NewRuntimeError(u.operator, "Operand must be a number")
-	}
-
-	// Unreachable
-	return nil, nil
-}
-
-func (a AssignmentExpr) Evaluate(env *Environment) (LoxValue, error) {
-	value, err := a.value.(Evaluable).Evaluate(env)
-	if err != nil {
-		return nil, err
-	}
-
-	err = env.Assign(a.name, value)
 	if err != nil {
 		return nil, err
 	}
 	return value, nil
 }
 
-func (b BinaryExpr) Evaluate(env *Environment) (LoxValue, error) {
-	left, leftErr := b.left.(Evaluable).Evaluate(env)
-	right, rightErr := b.right.(Evaluable).Evaluate(env)
+func (b BinaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	left, leftErr := b.left.(Evaluable).Evaluate(i)
+	right, rightErr := b.right.(Evaluable).Evaluate(i)
 
 	if leftErr != nil {
 		return left, leftErr
@@ -260,22 +232,57 @@ func (b BinaryExpr) Evaluate(env *Environment) (LoxValue, error) {
 	return nil, errors.NewRuntimeError(b.operator, "Operands must be numbers")
 }
 
-func (t TernaryExpr) Evaluate(env *Environment) (LoxValue, error) {
-	cond, condErr := t.condition.(Evaluable).Evaluate(env)
+func (c CallExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	callee, err := c.callee.(Evaluable).Evaluate(i)
+	if err != nil {
+		return nil, err
+	}
+
+	argValues := make([]LoxValue, len(c.arguments))
+	for j, argExpr := range c.arguments {
+		v, err := argExpr.(Evaluable).Evaluate(i)
+		if err != nil {
+			return nil, err
+		}
+		argValues[j] = v
+	}
+
+	fn, ok := callee.(Callable)
+	if !ok {
+		return nil, errors.NewRuntimeError(c.paren, "Can only call functions and classes")
+	}
+
+	if fn.Arity() != len(argValues) {
+		return nil, errors.NewRuntimeError(c.paren, fmt.Sprintf("Expected %d arguments but got %d", fn.Arity(), len(argValues)))
+	}
+
+	return fn.Call(argValues, i)
+}
+
+func (g GroupingExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	return g.expression.(Evaluable).Evaluate(i)
+}
+
+func (l LiteralExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	return l.value, nil
+}
+
+func (t TernaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	cond, condErr := t.condition.(Evaluable).Evaluate(i)
 
 	if condErr != nil {
 		return cond, condErr
 	}
 
 	if isTruthy(cond) {
-		left, leftErr := t.left.(Evaluable).Evaluate(env)
+		left, leftErr := t.left.(Evaluable).Evaluate(i)
 		if leftErr != nil {
 			return left, leftErr
 		}
 
 		return left, nil
 	} else {
-		right, rightErr := t.right.(Evaluable).Evaluate(env)
+		right, rightErr := t.right.(Evaluable).Evaluate(i)
 
 		if rightErr != nil {
 			return right, rightErr
@@ -283,6 +290,31 @@ func (t TernaryExpr) Evaluate(env *Environment) (LoxValue, error) {
 
 		return right, nil
 	}
+}
+
+func (u UnaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	right, err := u.right.(Evaluable).Evaluate(i)
+	if err != nil {
+		return right, err
+	}
+
+	switch u.operator.TokenType {
+	case token.BANG:
+		return !isTruthy(right), nil
+	case token.MINUS:
+		if rFloat, ok := right.(float64); ok {
+			return -(rFloat), nil
+		}
+
+		return nil, errors.NewRuntimeError(u.operator, "Operand must be a number")
+	}
+
+	// Unreachable
+	return nil, nil
+}
+
+func (v VariableExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	return i.lookupVariable(v.name, v)
 }
 
 func isTruthy(value LoxValue) bool {
@@ -311,6 +343,10 @@ func ToString(value LoxValue) string {
 
 	if vFloat, ok := value.(float64); ok {
 		return strconv.FormatFloat(vFloat, 'f', -1, 64)
+	}
+
+	if fn, ok := value.(Callable); ok {
+		return fn.String()
 	}
 
 	return fmt.Sprintf("%v", value)

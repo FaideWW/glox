@@ -1,6 +1,8 @@
 package ast
 
 import (
+	"fmt"
+
 	"github.com/faideww/glox/src/errors"
 	"github.com/faideww/glox/src/token"
 )
@@ -41,7 +43,9 @@ func (p *Parser) ParseExpression() (Expr, bool) {
 func (p *Parser) declaration() (Stmt, error) {
 	var value Stmt
 	var err error
-	if p.match(token.VAR) {
+	if p.match(token.FUN) {
+		value, err = p.function("function")
+	} else if p.match(token.VAR) {
 		value, err = p.varDeclaration()
 	} else {
 		value, err = p.statement()
@@ -52,6 +56,52 @@ func (p *Parser) declaration() (Stmt, error) {
 	}
 
 	return value, err
+}
+
+func (p *Parser) function(kind string) (Stmt, error) {
+	name, err := p.consume(token.IDENTIFIER, fmt.Sprintf("Expect %s name", kind))
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = p.consume(token.LEFT_PAREN, fmt.Sprintf("Expect '(' after %s name", kind))
+	if err != nil {
+		return nil, err
+	}
+
+	params := make([]token.Token, 0)
+	if !p.check(token.RIGHT_PAREN) {
+		matchedComma := true
+		for matchedComma {
+			if len(params) >= 255 {
+				p.error(p.peek(), "Can't have more than 255 parameters")
+			}
+
+			param, paramErr := p.consume(token.IDENTIFIER, "Expect parameter name")
+			if paramErr != nil {
+				return nil, err
+			}
+
+			params = append(params, param)
+			matchedComma = p.match(token.COMMA)
+		}
+	}
+	_, err = p.consume(token.RIGHT_PAREN, "Expect ')' after parameters")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = p.consume(token.LEFT_BRACE, fmt.Sprintf("Expect '{' before %s body", kind))
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.block()
+	if err != nil {
+		return nil, err
+	}
+
+	return FunctionStmt{name, params, body}, nil
 }
 
 func (p *Parser) varDeclaration() (Stmt, error) {
@@ -102,6 +152,9 @@ func (p *Parser) statement() (Stmt, error) {
 	if p.match(token.PRINT) {
 		return p.printStatement()
 	}
+	if p.match(token.RETURN) {
+		return p.returnStatement()
+	}
 	if p.match(token.WHILE) {
 		return p.whileStatement()
 	}
@@ -110,7 +163,7 @@ func (p *Parser) statement() (Stmt, error) {
 		if err != nil {
 			return nil, err
 		}
-		return Block{block}, nil
+		return BlockStmt{block}, nil
 	}
 
 	return p.expressionStatement()
@@ -168,7 +221,7 @@ func (p *Parser) forStatement() (Stmt, error) {
 	// desugar the loop construction into ({ initializer; while (condition) { body; increment; } })
 
 	if increment != nil {
-		body = Block{
+		body = BlockStmt{
 			statements: []Stmt{body, ExpressionStmt{increment}},
 		}
 	}
@@ -178,7 +231,7 @@ func (p *Parser) forStatement() (Stmt, error) {
 	}
 
 	if initializer != nil {
-		body = Block{
+		body = BlockStmt{
 			statements: []Stmt{initializer, body},
 		}
 	}
@@ -227,6 +280,26 @@ func (p *Parser) printStatement() (Stmt, error) {
 	return PrintStmt{expr}, nil
 }
 
+func (p *Parser) returnStatement() (Stmt, error) {
+	keyword := p.previous()
+	var returnVal Expr = nil
+
+	if !p.check(token.SEMICOLON) {
+		var err error
+		returnVal, err = p.expression()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, err := p.consume(token.SEMICOLON, "Expect ':' after return value")
+	if err != nil {
+		return nil, err
+	}
+
+	return ReturnStmt{keyword, returnVal}, nil
+}
+
 func (p *Parser) whileStatement() (Stmt, error) {
 	_, err := p.consume(token.LEFT_PAREN, "Expect '(' after 'while'")
 	if err != nil {
@@ -260,6 +333,8 @@ func (p *Parser) expressionStatement() (Stmt, error) {
 	return ExpressionStmt{expr}, nil
 }
 
+// block() assumes that the preceding left brace has already been consumed, and
+// will not check for its presence.
 func (p *Parser) block() ([]Stmt, error) {
 	statements := make([]Stmt, 0)
 	for !p.check(token.RIGHT_BRACE) && !p.atEnd() {
@@ -315,16 +390,7 @@ func (p *Parser) previous() token.Token {
 }
 
 func (p *Parser) expression() (Expr, error) {
-	expr, err := p.assignment()
-	if err != nil {
-		return expr, err
-	}
-
-	for p.match(token.COMMA) {
-		expr, err = p.assignment()
-	}
-
-	return expr, err
+	return p.assignment()
 }
 
 func (p *Parser) assignment() (Expr, error) {
@@ -496,7 +562,56 @@ func (p *Parser) unary() (Expr, error) {
 		return UnaryExpr{operator, right}, nil
 	}
 
-	return p.primary()
+	return p.call()
+}
+
+func (p *Parser) call() (Expr, error) {
+	expr, err := p.primary()
+	if err != nil {
+		return nil, err
+	}
+
+	// keep matching calls as long as they exist, using the previous expression
+	// as the new callee
+	for {
+		if p.match(token.LEFT_PAREN) {
+			expr, err = p.finishCall(expr)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			break
+		}
+	}
+	return expr, nil
+}
+
+func (p *Parser) finishCall(callee Expr) (Expr, error) {
+	args := make([]Expr, 0)
+	if !p.check(token.RIGHT_PAREN) {
+		matchedComma := true
+		for matchedComma {
+			if len(args) >= 255 {
+				// We deliberately don't raise the error here, as we don't need to
+				// recover from an unknown state. We only want to report that it
+				// happened
+				p.error(p.peek(), "Maximum arguments reached (255)")
+			}
+			expr, err := p.expression()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, expr)
+			matchedComma = p.match(token.COMMA)
+		}
+	}
+
+	token, err := p.consume(token.RIGHT_PAREN, "Expect ')' after arguments")
+	if err != nil {
+		return nil, err
+	}
+
+	return CallExpr{callee, token, args}, nil
 }
 
 func (p *Parser) primary() (Expr, error) {

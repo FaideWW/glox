@@ -39,6 +39,12 @@ type BinaryExpr struct {
 	right    Expr
 }
 
+type CallExpr struct {
+	callee    Expr
+	paren     token.Token
+	arguments []Expr
+}
+
 type GroupingExpr struct {
 	expression Expr
 }

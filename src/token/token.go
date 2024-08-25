@@ -67,10 +67,11 @@ type Token struct {
 	Lexeme    string
 	Literal   LiteralObject
 	Line      int
+	tokenId   int
 }
 
-func NewToken(tokenType TokenType, lexeme string, literal LiteralObject, line int) Token {
-	return Token{tokenType, lexeme, literal, line}
+func NewToken(tokenType TokenType, lexeme string, literal LiteralObject, line int, tokenId int) Token {
+	return Token{tokenType, lexeme, literal, line, tokenId}
 }
 
 func (t Token) String() string {

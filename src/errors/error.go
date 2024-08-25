@@ -20,6 +20,20 @@ func NewParserError(token token.Token, message string) *ParserError {
 	return err
 }
 
+type AnalysisError struct {
+	token   token.Token
+	message string
+}
+
+func (e *AnalysisError) Error() string {
+	return fmt.Sprintf("%s\n[line %d]\n", e.message, e.token.Line)
+}
+
+func NewAnalysisError(token token.Token, message string) *AnalysisError {
+	err := &AnalysisError{token, message}
+	return err
+}
+
 type RuntimeError struct {
 	token   token.Token
 	message string

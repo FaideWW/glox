@@ -1,0 +1,11 @@
+var a;
+
+{
+  var b;
+  var c;
+  print a;
+
+  print c;
+}
+
+print a;
