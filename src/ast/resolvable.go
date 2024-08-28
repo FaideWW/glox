@@ -24,6 +24,35 @@ func (bs BreakStmt) Resolve(r *Resolver) error {
 	return nil
 }
 
+func (cs ClassStmt) Resolve(r *Resolver) error {
+	err := r.declare(cs.name)
+	if err != nil {
+		return err
+	}
+	r.define(cs.name)
+
+	r.beginScope()
+	r.scopes[len(r.scopes)-1]["this"] = ScopeVariable{
+		declaration: nil,
+		name:        "this",
+		defined:     true,
+		used:        true,
+	}
+
+	for _, method := range cs.methods {
+		err := resolveFunction(r, method, FNTYPE_METHOD)
+		if err != nil {
+			return err
+		}
+	}
+	err = r.endScope()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (cs ContinueStmt) Resolve(r *Resolver) error {
 	if r.currentLoop == LOOPTYPE_NONE {
 		return errors.NewAnalysisError(cs.token, "Can't continue outside of loop")
@@ -163,6 +192,10 @@ func (c CallExpr) Resolve(r *Resolver) error {
 	return nil
 }
 
+func (g GetExpr) Resolve(r *Resolver) error {
+	return g.object.(Resolvable).Resolve(r)
+}
+
 func (g GroupingExpr) Resolve(r *Resolver) error {
 	return g.expression.(Resolvable).Resolve(r)
 }
@@ -183,6 +216,18 @@ func (l LogicalExpr) Resolve(r *Resolver) error {
 	return nil
 }
 
+func (s SetExpr) Resolve(r *Resolver) error {
+	err := s.value.(Resolvable).Resolve(r)
+	if err != nil {
+		return err
+	}
+	err = s.obj.(Resolvable).Resolve(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (t TernaryExpr) Resolve(r *Resolver) error {
 	err := t.condition.(Resolvable).Resolve(r)
 	if err != nil {
@@ -197,6 +242,11 @@ func (t TernaryExpr) Resolve(r *Resolver) error {
 		return err
 	}
 
+	return nil
+}
+
+func (t ThisExpr) Resolve(r *Resolver) error {
+	r.resolveLocal(t, t.keyword)
 	return nil
 }
 

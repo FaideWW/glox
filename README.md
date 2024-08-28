@@ -7,7 +7,12 @@ Current lox grammar:
 ```
 program        → declaration* EOF ;
 
-declaration    → funDecl | varDecl | statement ;
+declaration    → classDecl
+               | funDecl
+               | varDecl
+               | statement ;
+
+classDecl      → "class" IDENTIFIER "{" function* "}" ;
 
 funDecl        → "fun" function ;
 function       → IDENTIFIER "(" parameters? ")" block ;
@@ -40,7 +45,7 @@ whileStmt      → "while" "(" expression ")" statement ;
 block          → "{" declaration* "}" ;
 
 expression     → assignment ;
-assignment     → IDENTIFIER "=" assignment
+assignment     → ( call ". " )? IDENTIFIER "=" assignment
                | condition ;
 condition      → logic_or ( ( "?" ) condition ( ":" ) condition )? ;
 logic_or       → logic_and ( "or" logic_and )* ;
@@ -51,7 +56,7 @@ term           → factor ( ( "-" | "+" ) factor )* ;
 factor         → unary ( ( "/" | "*" ) unary )* ;
 unary          → ( "!" | "-" ) unary
                | call ;
-call           → primary ( "(" arguments? ")" )* ;
+call           → primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
 arguments      → expression ( "," expression )* ;
 primary        → NUMBER | STRING | "true" | "false" | "nil"
                | "(" expression ")"

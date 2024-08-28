@@ -49,6 +49,7 @@ func (i *Interpreter) resolve(expr Expr, depth int) {
 }
 
 func (i *Interpreter) lookupVariable(name token.Token, expr Expr) (LoxValue, error) {
+	// fmt.Printf("%#v:%d\n", name, i.locals[expr])
 	if hops, ok := i.locals[expr]; ok {
 		// If the resolver has been run, this is guaranteed to find a value
 		return i.currentEnv.GetAt(hops, name.Lexeme), nil

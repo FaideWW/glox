@@ -135,6 +135,9 @@ func (p *Parser) statement() (Stmt, error) {
 		}
 		return BreakStmt{t}, nil
 	}
+	if p.match(token.CLASS) {
+		return p.classDeclaration()
+	}
 	if p.match(token.CONTINUE) {
 		t := p.previous()
 		_, err := p.consume(token.SEMICOLON, "Expected ';' after 'break'")
@@ -167,6 +170,34 @@ func (p *Parser) statement() (Stmt, error) {
 	}
 
 	return p.expressionStatement()
+}
+
+func (p *Parser) classDeclaration() (Stmt, error) {
+	name, err := p.consume(token.IDENTIFIER, "Expect class name")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = p.consume(token.LEFT_BRACE, "Expect '{' before class body")
+	if err != nil {
+		return nil, err
+	}
+
+	methods := make([]FunctionStmt, 0)
+	for !p.check(token.RIGHT_BRACE) && !p.atEnd() {
+		fn, methodErr := p.function("method")
+		if methodErr != nil {
+			return nil, methodErr
+		}
+		methods = append(methods, fn.(FunctionStmt))
+	}
+
+	_, err = p.consume(token.RIGHT_BRACE, "Expect '}' before class body")
+	if err != nil {
+		return nil, err
+	}
+
+	return ClassStmt{name, methods}, nil
 }
 
 func (p *Parser) forStatement() (Stmt, error) {
@@ -353,6 +384,7 @@ func (p *Parser) block() ([]Stmt, error) {
 	return statements, nil
 }
 
+// Attempts to match any of the given tokens, and consumes the token if found.
 func (p *Parser) match(types ...token.TokenType) bool {
 	for _, t := range types {
 		if p.check(t) {
@@ -409,6 +441,8 @@ func (p *Parser) assignment() (Expr, error) {
 		// Check if the receiving expression is an l-value
 		if receiver, ok := expr.(VariableExpr); ok {
 			return AssignmentExpr{receiver.name, value}, nil
+		} else if getter, ok := expr.(GetExpr); ok {
+			return SetExpr{getter.object, getter.name, value}, nil
 		}
 
 		return nil, p.error(tok, "Invalid assignment target")
@@ -579,6 +613,12 @@ func (p *Parser) call() (Expr, error) {
 			if err != nil {
 				return nil, err
 			}
+		} else if p.match(token.DOT) {
+			name, err := p.consume(token.IDENTIFIER, "Expcet property name after '.'")
+			if err != nil {
+				return nil, err
+			}
+			expr = GetExpr{expr, name}
 		} else {
 			break
 		}
@@ -627,6 +667,10 @@ func (p *Parser) primary() (Expr, error) {
 
 	if p.match(token.NUMBER, token.STRING) {
 		return LiteralExpr{p.previous().Literal}, nil
+	}
+
+	if p.match(token.THIS) {
+		return ThisExpr{p.previous()}, nil
 	}
 
 	if p.match(token.IDENTIFIER) {

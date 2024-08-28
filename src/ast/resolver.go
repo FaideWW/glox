@@ -8,9 +8,10 @@ import (
 )
 
 type ScopeVariable struct {
-	token   token.Token
-	defined bool
-	used    bool
+	declaration *token.Token
+	name        string
+	defined     bool
+	used        bool
 }
 
 type Scope map[string]ScopeVariable
@@ -20,6 +21,7 @@ type FunctionType int
 const (
 	FNTYPE_NONE = iota
 	FNTYPE_FUNCTION
+	FNTYPE_METHOD
 )
 
 type LoopType int
@@ -65,7 +67,7 @@ func (r *Resolver) endScope() error {
 	scope := r.scopes[len(r.scopes)-1]
 	for _, v := range scope {
 		if !v.used {
-			return errors.NewAnalysisError(v.token, fmt.Sprintf("Unused variable '%s'", v.token.Lexeme))
+			return errors.NewAnalysisError(*v.declaration, fmt.Sprintf("Unused variable '%s'", v.name))
 		}
 	}
 
@@ -88,9 +90,10 @@ func (r *Resolver) declare(name token.Token) error {
 	}
 
 	currentScope[name.Lexeme] = ScopeVariable{
-		token:   name,
-		defined: false,
-		used:    false,
+		declaration: &name,
+		name:        name.Lexeme,
+		defined:     false,
+		used:        false,
 	}
 	return nil
 }

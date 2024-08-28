@@ -5,7 +5,17 @@ import "github.com/faideww/glox/src/token"
 type Stmt interface {
 }
 
+type BlockStmt struct {
+	statements []Stmt
+}
+
 type BreakStmt struct{ token token.Token }
+
+type ClassStmt struct {
+	name    token.Token
+	methods []FunctionStmt
+}
+
 type ContinueStmt struct{ token token.Token }
 
 type ExpressionStmt struct {
@@ -33,16 +43,12 @@ type ReturnStmt struct {
 	value   Expr
 }
 
-type WhileStmt struct {
-	condition Expr
-	body      Stmt
-}
-
 type VarStmt struct {
 	name        token.Token
 	initializer Expr
 }
 
-type BlockStmt struct {
-	statements []Stmt
+type WhileStmt struct {
+	condition Expr
+	body      Stmt
 }

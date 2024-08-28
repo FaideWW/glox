@@ -17,6 +17,19 @@ func (bs BreakStmt) Evaluate(i *Interpreter) error {
 	return NewBreakException(bs.token)
 }
 
+func (cs ClassStmt) Evaluate(i *Interpreter) error {
+	i.currentEnv.Define(cs.name.Lexeme, nil)
+
+	methods := make(map[string]LoxFunction)
+	for _, method := range cs.methods {
+		fn := NewLoxFunction(method, i.currentEnv)
+		methods[method.name.Lexeme] = fn
+	}
+
+	cls := NewLoxClass(cs.name.Lexeme, methods)
+	return i.currentEnv.Assign(cs.name, cls)
+}
+
 func (cs ContinueStmt) Evaluate(i *Interpreter) error {
 	return NewContinueException(cs.token)
 }
@@ -259,12 +272,45 @@ func (c CallExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 	return fn.Call(argValues, i)
 }
 
+func (g GetExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	obj, err := g.object.(Evaluable).Evaluate(i)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("%#v:%#v (err:%v)\n", g, obj, err)
+	if objInstance, ok := obj.(LoxInstance); ok {
+		return objInstance.Get(g.name)
+	}
+	fmt.Println("not a LoxInstance")
+
+	fmt.Printf("%s:%#v (err:%v)\n", g.name.Lexeme, obj, err)
+	return nil, errors.NewRuntimeError(g.name, "Only instances can have properties")
+}
+
 func (g GroupingExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 	return g.expression.(Evaluable).Evaluate(i)
 }
 
 func (l LiteralExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 	return l.value, nil
+}
+
+func (s SetExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	obj, err := s.obj.(Evaluable).Evaluate(i)
+	if err != nil {
+		return nil, err
+	}
+
+	if instanceObj, ok := obj.(LoxInstance); ok {
+		value, err := s.value.(Evaluable).Evaluate(i)
+		if err != nil {
+			return nil, err
+		}
+		instanceObj.Set(s.name, value)
+		return value, nil
+	}
+	return nil, errors.NewRuntimeError(s.name, "Only instances have fields")
 }
 
 func (t TernaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {
@@ -290,6 +336,10 @@ func (t TernaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 
 		return right, nil
 	}
+}
+
+func (t ThisExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	return i.lookupVariable(t.keyword, t)
 }
 
 func (u UnaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {
@@ -345,7 +395,7 @@ func ToString(value LoxValue) string {
 		return strconv.FormatFloat(vFloat, 'f', -1, 64)
 	}
 
-	if fn, ok := value.(Callable); ok {
+	if fn, ok := value.(Named); ok {
 		return fn.String()
 	}
 
