@@ -18,13 +18,16 @@ func (bs BlockStmt) Resolve(r *Resolver) error {
 }
 
 func (bs BreakStmt) Resolve(r *Resolver) error {
-	if r.currentLoop == LOOPTYPE_NONE {
+	if !r.inLoop {
 		return errors.NewAnalysisError(bs.token, "Can't break outside of loop")
 	}
 	return nil
 }
 
 func (cs ClassStmt) Resolve(r *Resolver) error {
+	enclosingClass := r.currentClass
+	defer func() { r.currentClass = enclosingClass }()
+	r.currentClass = CLASSTYPE_CLASS
 	err := r.declare(cs.name)
 	if err != nil {
 		return err
@@ -40,9 +43,13 @@ func (cs ClassStmt) Resolve(r *Resolver) error {
 	}
 
 	for _, method := range cs.methods {
-		err := resolveFunction(r, method, FNTYPE_METHOD)
-		if err != nil {
-			return err
+		var declaration FunctionType = FNTYPE_METHOD
+		if method.name.Lexeme == "init" {
+			declaration = FNTYPE_INITIALIZER
+		}
+		fnErr := resolveFunction(r, method, declaration)
+		if fnErr != nil {
+			return fnErr
 		}
 	}
 	err = r.endScope()
@@ -54,7 +61,7 @@ func (cs ClassStmt) Resolve(r *Resolver) error {
 }
 
 func (cs ContinueStmt) Resolve(r *Resolver) error {
-	if r.currentLoop == LOOPTYPE_NONE {
+	if !r.inLoop {
 		return errors.NewAnalysisError(cs.token, "Can't continue outside of loop")
 	}
 	return nil
@@ -77,6 +84,7 @@ func (fs FunctionStmt) Resolve(r *Resolver) error {
 func resolveFunction(r *Resolver, fs FunctionStmt, fnType FunctionType) error {
 	enclosingFn := r.currentFunction
 	r.currentFunction = fnType
+	defer func() { r.currentFunction = enclosingFn }()
 	r.beginScope()
 	for _, param := range fs.params {
 		err := r.declare(param)
@@ -92,7 +100,6 @@ func resolveFunction(r *Resolver, fs FunctionStmt, fnType FunctionType) error {
 		}
 	}
 	err := r.endScope()
-	r.currentFunction = enclosingFn
 	return err
 }
 
@@ -124,6 +131,9 @@ func (rs ReturnStmt) Resolve(r *Resolver) error {
 		return errors.NewAnalysisError(rs.keyword, "Can't return from top-level code")
 	}
 	if rs.value != nil {
+		if r.currentFunction == FNTYPE_INITIALIZER {
+			return errors.NewAnalysisError(rs.keyword, "Can't return a value from a class initializer")
+		}
 		return rs.value.(Resolvable).Resolve(r)
 	}
 	return nil
@@ -150,10 +160,10 @@ func (ws WhileStmt) Resolve(r *Resolver) error {
 		return err
 	}
 
-	enclosingLoop := r.currentLoop
-	r.currentLoop = LOOPTYPE_LOOP
+	prevInLoop := r.inLoop
+	r.inLoop = true
 	err = ws.body.(Resolvable).Resolve(r)
-	r.currentLoop = enclosingLoop
+	r.inLoop = prevInLoop
 	return err
 }
 
@@ -246,6 +256,9 @@ func (t TernaryExpr) Resolve(r *Resolver) error {
 }
 
 func (t ThisExpr) Resolve(r *Resolver) error {
+	if r.currentClass == CLASSTYPE_NONE {
+		return errors.NewAnalysisError(t.keyword, "Can't use 'this' outside of a class")
+	}
 	r.resolveLocal(t, t.keyword)
 	return nil
 }

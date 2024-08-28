@@ -22,7 +22,7 @@ func (cs ClassStmt) Evaluate(i *Interpreter) error {
 
 	methods := make(map[string]LoxFunction)
 	for _, method := range cs.methods {
-		fn := NewLoxFunction(method, i.currentEnv)
+		fn := NewLoxFunction(method, i.currentEnv, method.name.Lexeme == "init")
 		methods[method.name.Lexeme] = fn
 	}
 
@@ -35,7 +35,7 @@ func (cs ContinueStmt) Evaluate(i *Interpreter) error {
 }
 
 func (fs FunctionStmt) Evaluate(i *Interpreter) error {
-	function := NewLoxFunction(fs, i.currentEnv)
+	function := NewLoxFunction(fs, i.currentEnv, false)
 	i.currentEnv.Define(fs.name.Lexeme, function)
 	return nil
 }
@@ -278,13 +278,10 @@ func (g GetExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 		return nil, err
 	}
 
-	fmt.Printf("%#v:%#v (err:%v)\n", g, obj, err)
 	if objInstance, ok := obj.(LoxInstance); ok {
 		return objInstance.Get(g.name)
 	}
-	fmt.Println("not a LoxInstance")
 
-	fmt.Printf("%s:%#v (err:%v)\n", g.name.Lexeme, obj, err)
 	return nil, errors.NewRuntimeError(g.name, "Only instances can have properties")
 }
 

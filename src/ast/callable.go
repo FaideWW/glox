@@ -39,12 +39,13 @@ func (f *NativeFunction) String() string {
 }
 
 type LoxFunction struct {
-	declaration FunctionStmt
-	closure     *Environment
+	declaration   FunctionStmt
+	closure       *Environment
+	isInitializer bool
 }
 
-func NewLoxFunction(declaration FunctionStmt, closure *Environment) LoxFunction {
-	return LoxFunction{declaration, closure}
+func NewLoxFunction(declaration FunctionStmt, closure *Environment, isInitializer bool) LoxFunction {
+	return LoxFunction{declaration, closure, isInitializer}
 }
 
 func (f LoxFunction) Arity() int {
@@ -54,7 +55,7 @@ func (f LoxFunction) Arity() int {
 func (f LoxFunction) bind(ctx *LoxInstance) LoxFunction {
 	env := NewEnvironment(f.closure)
 	env.Define("this", *ctx)
-	return NewLoxFunction(f.declaration, env)
+	return NewLoxFunction(f.declaration, env, f.isInitializer)
 }
 
 func (f LoxFunction) Call(args []LoxValue, i *Interpreter) (LoxValue, error) {
@@ -67,19 +68,24 @@ func (f LoxFunction) Call(args []LoxValue, i *Interpreter) (LoxValue, error) {
 	var err error = nil
 	prevEnv := i.currentEnv
 	i.currentEnv = funcEnv
+	defer func() { i.currentEnv = prevEnv }()
 	for _, stmt := range f.declaration.body {
 		err = stmt.(EvaluableStmt).Evaluate(i)
 		if err != nil {
 			switch err := err.(type) {
 			case *ReturnException:
-				i.currentEnv = prevEnv
+				if f.isInitializer {
+					return f.closure.GetAt(0, "this"), nil
+				}
 				return err.value, nil
 			default:
 				break
 			}
 		}
 	}
-	i.currentEnv = prevEnv
+	if f.isInitializer {
+		return f.closure.GetAt(0, "this"), nil
+	}
 	return nil, err
 }
 func (f LoxFunction) String() string {
@@ -100,10 +106,22 @@ func (c *LoxClass) String() string {
 }
 
 func (c *LoxClass) Call(args []LoxValue, i *Interpreter) (LoxValue, error) {
-	return *NewLoxInstance(c), nil
+	instance := NewLoxInstance(c)
+	initializer := c.findMethod("init")
+	if initializer != nil {
+		initializer.bind(instance).Call(args, i)
+	}
+
+	return *instance, nil
 }
 
-func (c *LoxClass) Arity() int { return 0 }
+func (c *LoxClass) Arity() int {
+	initializer := c.findMethod("init")
+	if initializer == nil {
+		return 0
+	}
+	return initializer.Arity()
+}
 
 func (c *LoxClass) findMethod(name string) *LoxFunction {
 	if method, ok := c.methods[name]; ok {

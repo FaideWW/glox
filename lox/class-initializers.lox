@@ -1,0 +1,13 @@
+class Test {
+  init(name) {
+    this.name = name;
+  }
+
+  greet() {
+    print "Hello "+this.name+"!";
+  }
+}
+
+var t = Test("world");
+
+t.greet();

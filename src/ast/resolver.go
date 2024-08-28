@@ -21,21 +21,23 @@ type FunctionType int
 const (
 	FNTYPE_NONE = iota
 	FNTYPE_FUNCTION
+	FNTYPE_INITIALIZER
 	FNTYPE_METHOD
 )
 
-type LoopType int
+type ClassType int
 
 const (
-	LOOPTYPE_NONE = iota
-	LOOPTYPE_LOOP
+	CLASSTYPE_NONE = iota
+	CLASSTYPE_CLASS
 )
 
 type Resolver struct {
 	interpreter     *Interpreter
 	scopes          []Scope
 	currentFunction FunctionType
-	currentLoop     LoopType
+	inLoop          bool
+	currentClass    ClassType
 }
 
 func NewResolver(interpreter *Interpreter) *Resolver {
@@ -43,7 +45,8 @@ func NewResolver(interpreter *Interpreter) *Resolver {
 		interpreter:     interpreter,
 		scopes:          make([]Scope, 0),
 		currentFunction: FNTYPE_NONE,
-		currentLoop:     LOOPTYPE_NONE,
+		inLoop:          false,
+		currentClass:    CLASSTYPE_NONE,
 	}
 }
 
