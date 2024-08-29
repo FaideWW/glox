@@ -1,6 +1,6 @@
 ## glox - A Lox language interpreter written in Go
 
-Following along with https://craftinginterpreters.com/
+Following along with https://craftinginterpreters.com/. Not guaranteed to be good or working.
 
 Current lox grammar:
 
