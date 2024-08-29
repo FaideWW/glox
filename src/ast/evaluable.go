@@ -18,7 +18,27 @@ func (bs BreakStmt) Evaluate(i *Interpreter) error {
 }
 
 func (cs ClassStmt) Evaluate(i *Interpreter) error {
+	var superclassValue LoxValue = nil
+	var superclass *LoxClass = nil
+	if cs.superclass != nil {
+		var superclassErr error
+		superclassValue, superclassErr = cs.superclass.Evaluate(i)
+		if superclassErr != nil {
+			return superclassErr
+		}
+
+		var ok bool
+		if superclass, ok = superclassValue.(*LoxClass); !ok {
+			return errors.NewRuntimeError(cs.superclass.name, "Superclass must be a class")
+		}
+	}
+
 	i.currentEnv.Define(cs.name.Lexeme, nil)
+
+	if cs.superclass != nil {
+		i.currentEnv = NewEnvironment(i.currentEnv)
+		i.currentEnv.Define("super", superclass)
+	}
 
 	methods := make(map[string]LoxFunction)
 	for _, method := range cs.methods {
@@ -26,7 +46,12 @@ func (cs ClassStmt) Evaluate(i *Interpreter) error {
 		methods[method.name.Lexeme] = fn
 	}
 
-	cls := NewLoxClass(cs.name.Lexeme, methods)
+	cls := NewLoxClass(cs.name.Lexeme, superclass, methods)
+
+	if cs.superclass != nil {
+		i.currentEnv = i.currentEnv.parent
+	}
+
 	return i.currentEnv.Assign(cs.name, cls)
 }
 
@@ -278,7 +303,7 @@ func (g GetExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 		return nil, err
 	}
 
-	if objInstance, ok := obj.(LoxInstance); ok {
+	if objInstance, ok := obj.(*LoxInstance); ok {
 		return objInstance.Get(g.name)
 	}
 
@@ -299,7 +324,7 @@ func (s SetExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 		return nil, err
 	}
 
-	if instanceObj, ok := obj.(LoxInstance); ok {
+	if instanceObj, ok := obj.(*LoxInstance); ok {
 		value, err := s.value.(Evaluable).Evaluate(i)
 		if err != nil {
 			return nil, err
@@ -308,6 +333,20 @@ func (s SetExpr) Evaluate(i *Interpreter) (LoxValue, error) {
 		return value, nil
 	}
 	return nil, errors.NewRuntimeError(s.name, "Only instances have fields")
+}
+
+func (s SuperExpr) Evaluate(i *Interpreter) (LoxValue, error) {
+	distance := i.locals[s]
+	superclass := i.currentEnv.GetAt(distance, "super").(*LoxClass)
+
+	instance := i.currentEnv.GetAt(distance-1, "this").(*LoxInstance)
+
+	method := superclass.findMethod(s.method.Lexeme)
+	if method == nil {
+		return nil, errors.NewRuntimeError(s.method, fmt.Sprintf("Undefined property '%s'", s.method.Lexeme))
+	}
+	return method.bind(instance), nil
+
 }
 
 func (t TernaryExpr) Evaluate(i *Interpreter) (LoxValue, error) {

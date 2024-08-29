@@ -54,7 +54,7 @@ func (f LoxFunction) Arity() int {
 
 func (f LoxFunction) bind(ctx *LoxInstance) LoxFunction {
 	env := NewEnvironment(f.closure)
-	env.Define("this", *ctx)
+	env.Define("this", ctx)
 	return NewLoxFunction(f.declaration, env, f.isInitializer)
 }
 
@@ -93,12 +93,13 @@ func (f LoxFunction) String() string {
 }
 
 type LoxClass struct {
-	name    string
-	methods map[string]LoxFunction
+	name       string
+	superclass *LoxClass
+	methods    map[string]LoxFunction
 }
 
-func NewLoxClass(name string, methods map[string]LoxFunction) *LoxClass {
-	return &LoxClass{name, methods}
+func NewLoxClass(name string, superclass *LoxClass, methods map[string]LoxFunction) *LoxClass {
+	return &LoxClass{name, superclass, methods}
 }
 
 func (c *LoxClass) String() string {
@@ -112,7 +113,7 @@ func (c *LoxClass) Call(args []LoxValue, i *Interpreter) (LoxValue, error) {
 		initializer.bind(instance).Call(args, i)
 	}
 
-	return *instance, nil
+	return instance, nil
 }
 
 func (c *LoxClass) Arity() int {
@@ -126,6 +127,10 @@ func (c *LoxClass) Arity() int {
 func (c *LoxClass) findMethod(name string) *LoxFunction {
 	if method, ok := c.methods[name]; ok {
 		return &method
+	}
+
+	if c.superclass != nil {
+		return c.superclass.findMethod(name)
 	}
 
 	return nil

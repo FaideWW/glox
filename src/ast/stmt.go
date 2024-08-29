@@ -12,8 +12,9 @@ type BlockStmt struct {
 type BreakStmt struct{ token token.Token }
 
 type ClassStmt struct {
-	name    token.Token
-	methods []FunctionStmt
+	name       token.Token
+	superclass *VariableExpr
+	methods    []FunctionStmt
 }
 
 type ContinueStmt struct{ token token.Token }

@@ -1,0 +1,41 @@
+class Animal {
+  legs() {
+    return 4;
+  }
+}
+
+class Dog < Animal {
+  speak() {
+    print "bark";
+  }
+}
+
+class Cat < Animal {
+  speak() {
+    print "meow";
+  }
+}
+
+var dog = Dog();
+var cat = Cat();
+
+dog.speak();
+cat.speak();
+
+print dog.legs();
+print cat.legs();
+
+class Doughnut {
+  cook() {
+    print "Fry until golden brown.";
+  }
+}
+
+class BostonCream < Doughnut {
+  cook() {
+    super.cook();
+    print "Pipe full of custard and coat with chocolate.";
+  }
+}
+
+BostonCream().cook();

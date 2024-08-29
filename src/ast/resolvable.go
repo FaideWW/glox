@@ -34,6 +34,27 @@ func (cs ClassStmt) Resolve(r *Resolver) error {
 	}
 	r.define(cs.name)
 
+	if cs.superclass != nil {
+
+		if cs.name.Lexeme == cs.superclass.name.Lexeme {
+			return errors.NewAnalysisError(cs.superclass.name, "A class can't inherit from itself")
+		}
+		r.currentClass = CLASSTYPE_SUBCLASS
+		superclassErr := cs.superclass.Resolve(r)
+		if superclassErr != nil {
+			return superclassErr
+		}
+	}
+	if cs.superclass != nil {
+		r.beginScope()
+		r.scopes[len(r.scopes)-1]["super"] = ScopeVariable{
+			declaration: nil,
+			name:        "super",
+			defined:     true,
+			used:        true,
+		}
+	}
+
 	r.beginScope()
 	r.scopes[len(r.scopes)-1]["this"] = ScopeVariable{
 		declaration: nil,
@@ -55,6 +76,13 @@ func (cs ClassStmt) Resolve(r *Resolver) error {
 	err = r.endScope()
 	if err != nil {
 		return err
+	}
+
+	if cs.superclass != nil {
+		err = r.endScope()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -235,6 +263,16 @@ func (s SetExpr) Resolve(r *Resolver) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (s SuperExpr) Resolve(r *Resolver) error {
+	if r.currentClass == CLASSTYPE_NONE {
+		return errors.NewAnalysisError(s.keyword, "Can't use 'super' outside of a class")
+	} else if r.currentClass != CLASSTYPE_SUBCLASS {
+		return errors.NewAnalysisError(s.keyword, "Can't use 'super' in a class with no superclass")
+	}
+	r.resolveLocal(s, s.keyword)
 	return nil
 }
 

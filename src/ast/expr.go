@@ -51,6 +51,11 @@ type SetExpr struct {
 	value Expr
 }
 
+type SuperExpr struct {
+	keyword token.Token
+	method  token.Token
+}
+
 type TernaryExpr struct {
 	condition Expr
 	left      Expr

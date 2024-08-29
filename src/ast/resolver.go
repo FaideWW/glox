@@ -29,6 +29,7 @@ type ClassType int
 
 const (
 	CLASSTYPE_NONE = iota
+	CLASSTYPE_SUBCLASS
 	CLASSTYPE_CLASS
 )
 
